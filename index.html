@@ -825,6 +825,46 @@ body {
   padding:32px; width:min(420px,92vw); text-align:center;
   box-shadow:0 40px 80px rgba(0,0,0,0.6);
 }
+
+/* NFC scan modal (for delete guard & standalone scan) */
+#nfcScanModal {
+  display:none; position:fixed; inset:0; z-index:950;
+  background:rgba(0,0,0,0.85); backdrop-filter:blur(28px);
+  align-items:center; justify-content:center;
+}
+#nfcScanModal.open { display:flex; animation:fadeIn 0.3s; }
+.nfc-modal-box {
+  background:rgba(18,18,28,0.97); border:1px solid rgba(139,92,246,0.3);
+  border-radius:24px; padding:36px 32px; width:min(380px,92vw); text-align:center;
+  box-shadow:0 0 60px rgba(139,92,246,0.2), 0 40px 80px rgba(0,0,0,0.7);
+  animation: nfcModalIn 0.4s var(--spring) both;
+}
+@keyframes nfcModalIn { from{opacity:0;transform:scale(0.92)} to{opacity:1;transform:scale(1)} }
+.nfc-modal-title { font-size:16px; font-weight:700; letter-spacing:-0.3px; margin-bottom:6px; }
+.nfc-modal-sub { font-size:13px; color:var(--text3); line-height:1.65; margin-bottom:24px; }
+.nfc-modal-status {
+  font-size:12px; font-weight:600; letter-spacing:0.3px;
+  padding:6px 14px; border-radius:var(--pill); display:inline-block; margin-bottom:20px;
+  transition:all 0.3s;
+}
+.nfc-modal-status.scanning { background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3); }
+.nfc-modal-status.success  { background:rgba(0,255,157,0.12); color:var(--neon2); border:1px solid rgba(0,255,157,0.3); }
+.nfc-modal-status.error    { background:rgba(255,69,58,0.12); color:var(--red); border:1px solid rgba(255,69,58,0.3); }
+.nfc-modal-status.unsupported { background:rgba(255,170,0,0.12); color:var(--neon4); border:1px solid rgba(255,170,0,0.3); }
+
+/* NFC availability badge on login button */
+.nfc-available-badge {
+  font-size:9px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
+  padding:2px 7px; border-radius:var(--pill);
+  background:rgba(0,255,157,0.12); color:var(--neon2); border:1px solid rgba(0,255,157,0.25);
+  margin-left:auto; flex-shrink:0;
+}
+.nfc-unavailable-badge {
+  font-size:9px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase;
+  padding:2px 7px; border-radius:var(--pill);
+  background:rgba(255,69,58,0.1); color:#ff6b6b; border:1px solid rgba(255,69,58,0.2);
+  margin-left:auto; flex-shrink:0;
+}
 .btn-secondary-sm {
   width:100%; padding:11px; border-radius:var(--pill); background:var(--glass);
   border:1px solid var(--border); color:var(--text2); font-family:inherit;
@@ -977,12 +1017,13 @@ footer { padding:40px 60px 28px; border-top:1px solid var(--border); display:fle
               <div class="login-btn-sub">Explore without an account</div>
             </div>
           </button>
-          <button class="login-btn" onclick="showPanel('nfcPanel')" style="border-color:rgba(139,92,246,0.2)">
+          <button class="login-btn" id="nfcLoginBtn" onclick="showPanel('nfcPanel')" style="border-color:rgba(139,92,246,0.2)">
             <div class="login-btn-icon">📡</div>
             <div class="login-btn-label">
               NFC Card
-              <div class="login-btn-sub">Tap registered card to enter</div>
+              <div class="login-btn-sub" id="nfcLoginSub">Tap registered card to enter</div>
             </div>
+            <span id="nfcAvailBadge"></span>
           </button>
         </div>
       </div>
@@ -1017,19 +1058,20 @@ footer { padding:40px 60px 28px; border-top:1px solid var(--border); display:fle
 
       <!-- NFC panel -->
       <div id="nfcPanel" class="login-panel">
-        <button class="back-btn" onclick="showPanel('loginMenu')">← Back</button>
+        <button class="back-btn" onclick="stopNFCScan();showPanel('loginMenu')">← Back</button>
         <div class="nfc-scanner">
-          <div class="nfc-ring"><div class="nfc-icon">📡</div></div>
-          <div style="font-size:15px;font-weight:600;margin-bottom:6px;letter-spacing:-0.3px">Awaiting NFC Tap</div>
-          <div style="font-size:13px;color:var(--text3);line-height:1.7">Hold your registered card near this device</div>
-          <button class="btn-primary" onclick="simulateNFCTap()" style="margin-top:20px;max-width:240px;margin-left:auto;margin-right:auto">Simulate NFC Tap</button>
-          <button class="btn-secondary" onclick="showPanel('nfcRegPanel')">Register New Card →</button>
+          <div class="nfc-ring" id="nfcLoginRing"><div class="nfc-icon">📡</div></div>
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px;letter-spacing:-0.3px" id="nfcLoginTitle">Awaiting NFC Tap</div>
+          <div style="font-size:13px;color:var(--text3);line-height:1.7" id="nfcLoginSub2">Hold your registered card near the back of your phone</div>
+          <div id="nfcLoginStatusWrap" style="margin-top:14px;min-height:28px"></div>
+          <button class="btn-primary" id="nfcScanBtn" onclick="startNFCLogin()" style="margin-top:20px;max-width:240px;margin-left:auto;margin-right:auto">📡 Start NFC Scan</button>
+          <button class="btn-secondary" onclick="showPanel('nfcRegPanel')" style="margin-top:10px">Register New Card →</button>
         </div>
       </div>
 
       <!-- NFC Register -->
       <div id="nfcRegPanel" class="login-panel">
-        <button class="back-btn" onclick="showPanel('nfcPanel')">← Back</button>
+        <button class="back-btn" onclick="stopNFCScan();showPanel('nfcPanel')">← Back</button>
         <div class="field-label">Callsign (4 letters)</div>
         <input type="text" class="field-input" id="nfcRegName" maxlength="4" placeholder="e.g. NOVA" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'')">
         <div class="field-label">6-Digit Security PIN</div>
@@ -1052,7 +1094,12 @@ footer { padding:40px 60px 28px; border-top:1px solid var(--border); display:fle
           <button class="pin-key" onclick="nfcPinPress('0')">0</button>
           <button class="pin-key" onclick="nfcPinPress('del')" style="font-size:18px;font-weight:300">⌫</button>
         </div>
-        <button class="btn-primary" onclick="registerNFC()" style="margin-top:16px">Register NFC Card →</button>
+        <div id="nfcRegScanStep" style="display:none;margin-top:12px;padding:14px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.25);border-radius:12px;text-align:center">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">Now scan your NFC card</div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Hold your card near the back of your phone</div>
+          <div id="nfcRegStatus" style="font-size:12px;color:#a78bfa"></div>
+        </div>
+        <button class="btn-primary" id="nfcRegBtn" onclick="startNFCRegister()" style="margin-top:16px">📡 Scan Card to Register →</button>
       </div>
     </div>
   </div>
@@ -1503,14 +1550,28 @@ footer { padding:40px 60px 28px; border-top:1px solid var(--border); display:fle
   </div>
 </div>
 
+<!-- NFC SCAN MODAL (generic — used for delete guard and profile NFC actions) -->
+<div id="nfcScanModal">
+  <div class="nfc-modal-box">
+    <div class="nfc-ring" style="margin:0 auto 20px"><div class="nfc-icon" id="nfcModalIcon">📡</div></div>
+    <div class="nfc-modal-title" id="nfcModalTitle">Scan NFC Card</div>
+    <div class="nfc-modal-sub" id="nfcModalSub">Hold your registered NFC card near the back of your phone to continue.</div>
+    <div class="nfc-modal-status scanning" id="nfcModalStatus">● Scanning…</div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn-secondary-sm" onclick="cancelNFCModal()" style="font-size:13px">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- DELETE WARNING -->
 <div class="warning-modal" id="warningModal">
   <div class="warning-box">
     <div style="font-size:40px;margin-bottom:12px">⚠️</div>
     <div style="font-size:17px;font-weight:700;margin-bottom:6px;letter-spacing:-0.3px">Delete Profile?</div>
-    <div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.6">This will remove all your data. Type your callsign and PIN to confirm.</div>
+    <div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.6">This will permanently remove all your data. Type your callsign and PIN to confirm.</div>
     <input type="text" class="field-input" id="deleteConfirmName" placeholder="Your callsign" oninput="this.value=this.value.toUpperCase()">
     <input type="password" class="field-input" id="deleteConfirmPin" placeholder="Your PIN">
+    <div id="deleteNFCNote" style="font-size:12px;color:rgba(139,92,246,0.8);margin-bottom:4px;display:none">📡 NFC scan required as additional confirmation</div>
     <div style="display:flex;gap:10px;margin-top:16px">
       <button class="btn-primary" onclick="confirmDeleteProfile()" style="background:var(--red);color:#fff;box-shadow:0 4px 16px rgba(255,69,58,0.3)">Delete Everything</button>
       <button class="btn-secondary-sm" onclick="closeWarning()">Cancel</button>
@@ -1906,33 +1967,266 @@ function loginDemo(){
   enterApp();
 }
 
-function simulateNFCTap(){
-  const reg=Object.values(users).filter(u=>u.nfc&&u.nfc.length>0);
-  if(!reg.length){toast('No NFC registered. Register a card first.','info');showPanel('nfcRegPanel');return}
-  const u=reg[0];
-  if(u.access==='none'){toast('Access revoked','error');return}
-  currentUser={...u};
-  toast(`NFC authenticated: ${u.name}`,'success');
-  enterApp();
+// ══════════════════════════════════════════════════════
+//  WEB NFC ENGINE
+//  Works on Chrome for Android 89+. Graceful fallback on other browsers.
+// ══════════════════════════════════════════════════════
+const NFC_SUPPORTED = 'NDEFReader' in window;
+let _nfcReader = null;        // active NDEFReader instance
+let _nfcAbort  = null;        // AbortController for stopping scans
+let _nfcModalCallback = null; // callback fn for modal-based scans
+
+// Called on page load — show badge & adjust UI based on NFC availability
+(function initNFCUI(){
+  // Badge on the login NFC button
+  window.addEventListener('DOMContentLoaded', () => {
+    const badge = document.getElementById('nfcAvailBadge');
+    if(badge){
+      if(NFC_SUPPORTED){
+        badge.className='nfc-available-badge'; badge.textContent='Ready';
+      } else {
+        badge.className='nfc-unavailable-badge'; badge.textContent='Android Only';
+        const sub=document.getElementById('nfcLoginSub');
+        if(sub) sub.textContent='Chrome for Android required';
+      }
+    }
+    // Show NFC note in delete modal if user has NFC cards and NFC is available
+    const note=document.getElementById('deleteNFCNote');
+    if(note && NFC_SUPPORTED) note.style.display='block';
+  });
+})();
+
+// Stop any active NFC scan cleanly
+function stopNFCScan(){
+  if(_nfcAbort){ try{ _nfcAbort.abort(); }catch(e){} _nfcAbort=null; }
+  _nfcReader=null;
 }
 
-function registerNFC(){
+// ── NFC Login: scan card and match against registered UIDs ──
+async function startNFCLogin(){
+  const btn=document.getElementById('nfcScanBtn');
+  const ring=document.getElementById('nfcLoginRing');
+
+  if(!NFC_SUPPORTED){
+    setNFCLoginStatus('error','⚠ NFC not supported here. Use Chrome for Android.');
+    return;
+  }
+  const registered=Object.values(users).filter(u=>u.nfc&&u.nfc.length>0);
+  if(!registered.length){
+    setNFCLoginStatus('info','No NFC cards registered yet — register one first.');
+    setTimeout(()=>showPanel('nfcRegPanel'),1200);
+    return;
+  }
+
+  btn.textContent='● Scanning — tap card now…';
+  btn.disabled=true; btn.style.opacity='0.7';
+  ring.style.borderColor='#a78bfa';
+  setNFCLoginStatus('scanning','Hold your card to the back of your phone…');
+
+  stopNFCScan();
+  _nfcAbort=new AbortController();
+  try{
+    _nfcReader=new NDEFReader();
+    await _nfcReader.scan({signal:_nfcAbort.signal});
+    _nfcReader.addEventListener('reading',({serialNumber,message})=>{
+      const uid=serialNumber||extractNFCUID(message);
+      if(!uid){ setNFCLoginStatus('error','Could not read card UID. Try again.'); resetNFCScanBtn(); return; }
+      const matched=findUserByNFC(uid);
+      if(!matched){
+        setNFCLoginStatus('error','Card not recognised. Register it first →');
+        ring.style.borderColor='var(--red)';
+        resetNFCScanBtn(); stopNFCScan();
+        setTimeout(()=>showPanel('nfcRegPanel'),2000);
+        return;
+      }
+      if(matched.access==='none'){ setNFCLoginStatus('error','Access revoked for this account.'); resetNFCScanBtn(); stopNFCScan(); return; }
+      stopNFCScan();
+      ring.style.borderColor='var(--neon2)';
+      setNFCLoginStatus('success',`✓ Welcome back, ${matched.name}!`);
+      currentUser={...matched};
+      setTimeout(enterApp,700);
+    });
+    _nfcReader.addEventListener('readingerror',()=>{
+      setNFCLoginStatus('error','Read error. Ensure NFC is enabled in phone settings.');
+      resetNFCScanBtn(); stopNFCScan();
+    });
+  }catch(e){
+    const msg=e.name==='NotAllowedError'?'Permission denied — allow NFC and try again.':
+              e.name==='NotSupportedError'?'NFC hardware not found on this device.':
+              'NFC error: '+e.message;
+    setNFCLoginStatus('error',msg);
+    resetNFCScanBtn(); stopNFCScan();
+  }
+}
+
+function setNFCLoginStatus(type,msg){
+  const w=document.getElementById('nfcLoginStatusWrap');
+  if(!w) return;
+  const colors={scanning:'rgba(167,139,250,0.9)',success:'var(--neon2)',error:'var(--red)',info:'var(--neon)'};
+  w.innerHTML=`<div style="font-size:12px;font-weight:500;color:${colors[type]||'var(--text3)'};line-height:1.5">${msg}</div>`;
+}
+
+function resetNFCScanBtn(){
+  const btn=document.getElementById('nfcScanBtn');
+  if(!btn) return;
+  btn.textContent='📡 Start NFC Scan'; btn.disabled=false; btn.style.opacity='1';
+  const ring=document.getElementById('nfcLoginRing');
+  if(ring) ring.style.borderColor='var(--neon5)';
+}
+
+// ── NFC Registration: scan real card and store its UID ──
+async function startNFCRegister(){
   const name=document.getElementById('nfcRegName').value.trim().toUpperCase();
   if(!name||name.length!==4){toast('Enter exactly 4 letters','error');return}
   if(nfcPinBuffer.length!==6){toast('Enter 6-digit PIN','error');return}
-  const nfcId='NFC-'+Date.now().toString(36).toUpperCase();
+  if(users[name]&&users[name].pin!==nfcPinBuffer){toast('Incorrect PIN','error');return}
+  if(users[name]&&(users[name].nfc||[]).length>=2){toast('Max 2 NFC cards per account','error');return}
+
+  if(!NFC_SUPPORTED){
+    // Fallback for non-Android: store a virtual ID so the account still gets created
+    const vId='VIRTUAL-'+Date.now().toString(36).toUpperCase();
+    _doRegisterNFC(name,vId,true); return;
+  }
+
+  const btn=document.getElementById('nfcRegBtn');
+  const step=document.getElementById('nfcRegScanStep');
+  const status=document.getElementById('nfcRegStatus');
+  btn.textContent='● Waiting for card…'; btn.disabled=true; btn.style.opacity='0.7';
+  step.style.display='block';
+  status.textContent='Hold your NFC card to the back of your phone now…';
+  status.style.color='#a78bfa';
+
+  stopNFCScan();
+  _nfcAbort=new AbortController();
+  try{
+    _nfcReader=new NDEFReader();
+    await _nfcReader.scan({signal:_nfcAbort.signal});
+    _nfcReader.addEventListener('reading',({serialNumber,message})=>{
+      const uid=serialNumber||extractNFCUID(message);
+      if(!uid){ status.textContent='⚠ Could not read UID. Try a different card.'; return; }
+      stopNFCScan();
+      status.textContent='✓ Card scanned!'; status.style.color='var(--neon2)';
+      _doRegisterNFC(name,uid,false);
+    });
+    _nfcReader.addEventListener('readingerror',()=>{
+      status.textContent='⚠ Read error. Enable NFC in phone settings and try again.';
+      btn.textContent='📡 Scan Card to Register →'; btn.disabled=false; btn.style.opacity='1';
+      stopNFCScan();
+    });
+  }catch(e){
+    const msg=e.name==='NotAllowedError'?'⚠ Permission denied — allow NFC and retry.':
+              e.name==='NotSupportedError'?'⚠ NFC not available on this device.':'⚠ '+e.message;
+    status.textContent=msg;
+    btn.textContent='📡 Scan Card to Register →'; btn.disabled=false; btn.style.opacity='1';
+    stopNFCScan();
+  }
+}
+
+function _doRegisterNFC(name,uid,isVirtual){
   if(users[name]){
-    if(users[name].pin!==nfcPinBuffer){toast('Incorrect PIN','error');return}
-    if(users[name].nfc.length>=2){toast('Max 2 NFC cards','error');return}
-    users[name].nfc.push({id:nfcId,added:Date.now()});
+    users[name].nfc=users[name].nfc||[];
+    users[name].nfc.push({id:uid,added:Date.now(),virtual:isVirtual});
     saveUsers(); currentUser={...users[name]};
   } else {
-    users[name]={name,pin:nfcPinBuffer,nfc:[{id:nfcId,added:Date.now()}],created:Date.now(),access:'full'};
+    users[name]={name,pin:nfcPinBuffer,nfc:[{id:uid,added:Date.now(),virtual:isVirtual}],created:Date.now(),access:'full'};
     saveUsers(); currentUser={...users[name]};
   }
-  toast(`NFC registered for ${name}!`,'success');
-  enterApp();
+  const label=isVirtual?'Virtual NFC registered':'NFC card registered';
+  toast(`${label} for ${name}!`,'success');
+  const btn=document.getElementById('nfcRegBtn');
+  if(btn){btn.textContent='📡 Scan Card to Register →'; btn.disabled=false; btn.style.opacity='1';}
+  setTimeout(enterApp,600);
 }
+
+// ── Find a user whose stored NFC UID matches the scanned UID ──
+function findUserByNFC(uid){
+  const norm=(uid||'').toLowerCase().replace(/[:\-\s]/g,'');
+  return Object.values(users).find(u=>(u.nfc||[]).some(c=>(c.id||'').toLowerCase().replace(/[:\-\s]/g,'')=== norm))||null;
+}
+
+// ── Try to extract a UID from NDEF message records if serialNumber is empty ──
+function extractNFCUID(message){
+  if(!message||!message.records) return null;
+  for(const rec of message.records){
+    try{
+      if(rec.recordType==='text'){
+        const dec=new TextDecoder(rec.encoding||'utf-8');
+        return dec.decode(rec.data);
+      }
+    }catch(e){}
+  }
+  return null;
+}
+
+// ── Generic NFC Scan Modal — used for delete guard ──
+function openNFCScanModal(title,sub,callback){
+  _nfcModalCallback=callback;
+  document.getElementById('nfcModalTitle').textContent=title;
+  document.getElementById('nfcModalSub').textContent=sub;
+  document.getElementById('nfcModalStatus').className='nfc-modal-status scanning';
+  document.getElementById('nfcModalStatus').textContent='● Scanning…';
+  document.getElementById('nfcModalIcon').textContent='📡';
+  document.getElementById('nfcScanModal').classList.add('open');
+  _startNFCModalScan();
+}
+
+async function _startNFCModalScan(){
+  if(!NFC_SUPPORTED){
+    // On non-supported browsers, bypass NFC check and proceed
+    document.getElementById('nfcModalStatus').className='nfc-modal-status unsupported';
+    document.getElementById('nfcModalStatus').textContent='⚠ NFC unavailable — proceeding without card check';
+    setTimeout(()=>cancelNFCModal(true),1500);
+    return;
+  }
+  stopNFCScan();
+  _nfcAbort=new AbortController();
+  try{
+    _nfcReader=new NDEFReader();
+    await _nfcReader.scan({signal:_nfcAbort.signal});
+    _nfcReader.addEventListener('reading',({serialNumber,message})=>{
+      const uid=serialNumber||extractNFCUID(message);
+      const matched=uid?findUserByNFC(uid):null;
+      const isOwner=matched&&currentUser&&matched.name===currentUser.name;
+      if(!isOwner){
+        document.getElementById('nfcModalStatus').className='nfc-modal-status error';
+        document.getElementById('nfcModalStatus').textContent='✕ Wrong card — must use your own registered card';
+        document.getElementById('nfcModalIcon').textContent='🚫';
+        stopNFCScan();
+        setTimeout(()=>cancelNFCModal(false),2200);
+        return;
+      }
+      stopNFCScan();
+      document.getElementById('nfcModalStatus').className='nfc-modal-status success';
+      document.getElementById('nfcModalStatus').textContent='✓ Identity confirmed';
+      document.getElementById('nfcModalIcon').textContent='✅';
+      setTimeout(()=>{
+        document.getElementById('nfcScanModal').classList.remove('open');
+        if(_nfcModalCallback) _nfcModalCallback(true);
+        _nfcModalCallback=null;
+      },700);
+    });
+    _nfcReader.addEventListener('readingerror',()=>{
+      document.getElementById('nfcModalStatus').className='nfc-modal-status error';
+      document.getElementById('nfcModalStatus').textContent='⚠ Read error. Try again.';
+      stopNFCScan();
+    });
+  }catch(e){
+    document.getElementById('nfcModalStatus').className='nfc-modal-status unsupported';
+    document.getElementById('nfcModalStatus').textContent='⚠ NFC unavailable — proceeding without card check';
+    setTimeout(()=>cancelNFCModal(true),1500);
+  }
+}
+
+function cancelNFCModal(proceed=false){
+  stopNFCScan();
+  document.getElementById('nfcScanModal').classList.remove('open');
+  if(proceed&&_nfcModalCallback){ _nfcModalCallback(true); }
+  _nfcModalCallback=null;
+}
+
+// Legacy aliases
+function simulateNFCTap(){ startNFCLogin(); }
+function registerNFC(){ startNFCRegister(); }
 
 async function enterApp(){
   localStorage.setItem('mj_session',JSON.stringify(currentUser));
@@ -2563,6 +2857,25 @@ function confirmDeleteProfile(){
   const pin=document.getElementById('deleteConfirmPin').value.trim();
   if(name!==currentUser.name){toast('Callsign mismatch','error');return}
   if(!users[name]||users[name].pin!==pin){toast('Incorrect PIN','error');return}
+
+  // If user has NFC cards registered and NFC is supported, require NFC scan
+  const hasNFC = NFC_SUPPORTED && (users[name].nfc||[]).filter(c=>!c.virtual).length > 0;
+  if(hasNFC){
+    closeWarning();
+    openNFCScanModal(
+      '⚠️ Final NFC Confirmation',
+      'Scan your registered NFC card to permanently delete your profile and all data.',
+      (confirmed)=>{
+        if(confirmed){ _executeDeleteProfile(name); }
+        else { toast('NFC verification failed — delete cancelled','error'); }
+      }
+    );
+    return;
+  }
+  _executeDeleteProfile(name);
+}
+
+function _executeDeleteProfile(name){
   delete users[name];
   saveUsers();
   DB={movies:[],tvShows:[]};saveDB();
